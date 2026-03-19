@@ -1,0 +1,34 @@
+CREDITS
+───────────────────────────────────────────────
+Project   : Productivity Tracker
+Type      : Chrome / Edge Extension (Manifest V3)
+Version   : 1.0.0
+
+Author    : Harsha
+Date      : March 2026
+
+───────────────────────────────────────────────
+DESCRIPTION
+
+A local-first productivity logging extension for Chrome and Edge.
+Tracks work windows every 15 or 30 minutes, auto-detects breaks,
+lunch, and overtime. Exports to CSV for weekly manager reporting.
+
+───────────────────────────────────────────────
+TECH STACK
+
+Runtime   : Chrome / Edge Extension (MV3)
+Storage   : chrome.storage.local (no backend, no cloud)
+Scheduler : chrome.alarms API
+UI        : Vanilla HTML / CSS / JS
+
+───────────────────────────────────────────────
+FILES
+
+  manifest.json   Extension config and permissions
+  background.js   Alarm logic, missed/break/overtime tracking
+  popup.html      UI — Log, History, Settings tabs
+  popup.js        UI logic, CSV export
+  icons/          Extension icons (16, 48, 128px)
+
+───────────────────────────────────────────────

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Productivity Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #1e1e2e;
+      --surface:  #313244;
+      --border:   #45475a;
+      --text:     #cdd6f4;
+      --subtext:  #a6adc8;
+      --accent:   #89b4fa;
+      --accent-fg:#1e1e2e;
+      --green:    #a6e3a1;
+      --red:      #f38ba8;
+    }
+
+    body {
+      width: 360px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Nav tabs ── */
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 0;
+      text-align: center;
+      cursor: pointer;
+      color: var(--subtext);
+      font-size: 12px;
+      font-weight: 500;
+      transition: color 0.15s;
+      border: none;
+      background: none;
+    }
+    .tab.active {
+      color: var(--accent);
+      border-bottom: 2px solid var(--accent);
+    }
+
+    /* ── Panels ── */
+    .panel { display: none; padding: 16px; }
+    .panel.active { display: block; }
+
+    /* ── Log panel ── */
+    .slot-label {
+      font-size: 11px;
+      color: var(--subtext);
+      margin-bottom: 12px;
+    }
+    .slot-label span { color: var(--accent); font-weight: 600; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: var(--subtext);
+      margin-bottom: 4px;
+    }
+
+    select, input[type="text"] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color 0.15s;
+    }
+    select:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    select option { background: var(--surface); }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    button {
+      padding: 7px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+
+    .btn-primary { background: var(--accent); color: var(--accent-fg); }
+    .btn-ghost   { background: var(--border); color: var(--text); }
+    .btn-danger  { background: var(--red);    color: var(--accent-fg); }
+    .btn-sm      { padding: 5px 10px; font-size: 11px; }
+
+    .toast {
+      display: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 10px;
+      text-align: center;
+    }
+    .toast.success { background: #1e3a2f; color: var(--green); display: block; }
+    .toast.error   { background: #3a1e1e; color: var(--red);   display: block; }
+
+    /* ── History panel ── */
+    .history-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .history-toolbar h3 { font-size: 12px; color: var(--subtext); font-weight: 500; }
+
+    .log-list {
+      max-height: 300px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-row {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--surface);
+      border-radius: 5px;
+      font-size: 11px;
+    }
+    .log-slot { color: var(--subtext); font-variant-numeric: tabular-nums; }
+    .log-cat  { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-note { font-size: 10px; color: var(--subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 2; }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 99px;
+      font-weight: 600;
+    }
+    .badge-logged  { background: #1e3a2f; color: var(--green); }
+    .badge-missed  { background: #3a2a1e; color: #fab387; }
+    .badge-break   { background: #2a2a3a; color: var(--subtext); }
+    .badge-lunch    { background: #2a1e3a; color: #cba6f7; }
+    .badge-overtime { background: #3a1e2a; color: #f38ba8; }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px 0;
+      color: var(--subtext);
+      font-size: 12px;
+    }
+
+    /* ── Settings panel ── */
+    .settings-group { margin-bottom: 14px; }
+    .settings-group label { margin-bottom: 4px; }
+    .settings-group input { margin-bottom: 0; }
+
+    .settings-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .danger-zone {
+      border-top: 1px solid var(--border);
+      margin-top: 16px;
+      padding-top: 12px;
+    }
+    .danger-zone p {
+      font-size: 11px;
+      color: var(--subtext);
+      margin-bottom: 8px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar       { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="log">Log</button>
+    <button class="tab"        data-tab="history">History</button>
+    <button class="tab"        data-tab="settings">Settings</button>
+  </div>
+
+  <!-- ── Log Panel ── -->
+  <div id="tab-log" class="panel active">
+    <p class="slot-label">Window: <span id="slot-time">--:--</span></p>
+
+    <label for="category">Category</label>
+    <select id="category">
+      <option>Deep Work</option>
+      <option>Meeting / Call</option>
+      <option>Review / Feedback</option>
+      <option>Admin / Email</option>
+      <option>Learning</option>
+      <option>Other</option>
+    </select>
+
+    <label for="note">Note <span style="color:var(--border)">(optional)</span></label>
+    <input type="text" id="note" placeholder="e.g. infra pipeline review" />
+
+    <div class="btn-row">
+      <button class="btn-ghost" id="btn-skip">Skip</button>
+      <button class="btn-primary" id="btn-submit">Log it →</button>
+    </div>
+
+    <div id="log-toast" class="toast"></div>
+  </div>
+
+  <!-- ── History Panel ── -->
+  <div id="tab-history" class="panel">
+    <div class="history-toolbar">
+      <h3>Today's log</h3>
+      <button class="btn-primary btn-sm" id="btn-export">Export CSV ↓</button>
+    </div>
+    <div class="log-list" id="log-list">
+      <div class="empty-state">No entries yet.</div>
+    </div>
+  </div>
+
+  <!-- ── Settings Panel ── -->
+  <div id="tab-settings" class="panel">
+    <div class="settings-group">
+      <label>Interval (minutes)</label>
+      <select id="s-interval">
+        <option value="15">15 minutes</option>
+        <option value="30">30 minutes</option>
+      </select>
+    </div>
+
+    <div class="settings-group">
+      <label>Work start</label>
+      <input type="text" id="s-work-start" placeholder="09:00" />
+    </div>
+    <div class="settings-group">
+      <label>Work end</label>
+      <input type="text" id="s-work-end" placeholder="18:00" />
+    </div>
+    <div class="settings-group">
+      <label>Lunch start</label>
+      <input type="text" id="s-lunch-start" placeholder="12:30" />
+    </div>
+    <div class="settings-group">
+      <label>Lunch end</label>
+      <input type="text" id="s-lunch-end" placeholder="13:30" />
+    </div>
+
+    <div class="settings-footer">
+      <span id="settings-toast" style="font-size:11px; color:var(--green);"></span>
+      <button class="btn-primary btn-sm" id="btn-save-settings">Save</button>
+    </div>
+
+    <div class="danger-zone">
+      <p>Clear all logged data. This cannot be undone.</p>
+      <button class="btn-danger btn-sm" id="btn-clear">Clear all data</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
