@@ -63,17 +63,40 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+// ── Live clock ────────────────────────────────────────────────────────────────
+
+function startClock(isOvertime) {
+  const clockEl  = document.getElementById("live-clock");
+  const dateEl   = document.getElementById("clock-date");
+  const statusEl = document.getElementById("clock-status");
+
+  if (isOvertime) clockEl.classList.add("overtime");
+
+  function tick() {
+    const now  = new Date();
+    const hh   = String(now.getHours()).padStart(2, "0");
+    const mm   = String(now.getMinutes()).padStart(2, "0");
+    const ss   = String(now.getSeconds()).padStart(2, "0");
+    clockEl.textContent = `${hh}:${mm}:${ss}`;
+
+    dateEl.textContent = now.toLocaleDateString("en-GB", {
+      weekday: "short", day: "numeric", month: "short"
+    });
+
+    statusEl.textContent = isOvertime ? "⚠ Overtime" : "Work hours";
+    statusEl.style.color = isOvertime ? "var(--red)" : "var(--green)";
+  }
+
+  tick();
+  setInterval(tick, 1000);
+}
+
 // ── Log panel ─────────────────────────────────────────────────────────────────
 
 async function initLogPanel() {
-  const pending = await getPendingSlot();
-  const slot    = pending ? pending.time_slot : currentSlot();
-  const label   = document.getElementById("slot-time");
-  label.textContent = slot;
-  if (pending?.is_overtime) {
-    label.textContent += " — Overtime";
-    label.style.color = "var(--red)";
-  }
+  const pending    = await getPendingSlot();
+  const isOvertime = pending?.is_overtime || false;
+  startClock(isOvertime);
   document.getElementById("note").focus();
 }
 

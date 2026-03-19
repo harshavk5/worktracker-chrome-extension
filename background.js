@@ -1,9 +1,11 @@
 // background.js — clock owner, alarm manager, state tracker
-// Uses chrome.alarms (survives service worker suspension + browser restart)
+// Uses chrome.alarms throughout (survives service worker suspension + browser restart)
+// setTimeout is NOT used — unreliable in MV3 service workers
 
-const ALARM_NAME     = "productivity-tick";
-const STORAGE_KEY    = "productivity_logs";
-const SETTINGS_KEY   = "productivity_settings";
+const ALARM_NAME   = "productivity-tick";
+const ALARM_MISSED = "productivity-missed"; // fires 3 min after tick to auto-log missed
+const STORAGE_KEY  = "productivity_logs";
+const SETTINGS_KEY = "productivity_settings";
 
 const DEFAULT_SETTINGS = {
   interval_minutes:        30,
@@ -14,7 +16,7 @@ const DEFAULT_SETTINGS = {
   break_threshold_windows: 2
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseHHMM(str) {
   const [h, m] = str.split(":").map(Number);
@@ -43,7 +45,7 @@ function inRange(nowMins, startStr, endStr) {
   return nowMins >= parseHHMM(startStr) && nowMins <= parseHHMM(endStr);
 }
 
-// ── Settings ─────────────────────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────────────────────
 
 async function getSettings() {
   return new Promise(resolve => {
@@ -78,7 +80,6 @@ async function appendLog(entry) {
 async function retroMarkBreak(n) {
   const logs = await getLogs();
   if (logs.length < n) return;
-
   const tail = logs.slice(-n);
   if (tail.every(r => r.entry_type === "missed")) {
     tail.forEach(r => r.entry_type = "break");
@@ -87,99 +88,139 @@ async function retroMarkBreak(n) {
   }
 }
 
+// ── Notification permission ───────────────────────────────────────────────────
+// chrome.notifications requires runtime permission check — silent failure if skipped
+
+async function ensureNotificationPermission() {
+  return new Promise(resolve => {
+    // chrome.notifications.getPermissionLevel is the correct check
+    chrome.notifications.getPermissionLevel(level => {
+      resolve(level === "granted");
+    });
+  });
+}
+
 // ── Alarm registration ────────────────────────────────────────────────────────
 
 async function registerAlarm() {
   const settings = await getSettings();
   await chrome.alarms.clearAll();
   chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: settings.interval_minutes,
+    delayInMinutes:  settings.interval_minutes,
     periodInMinutes: settings.interval_minutes
   });
 }
 
-// ── Alarm handler ─────────────────────────────────────────────────────────────
+// ── Notify + badge ────────────────────────────────────────────────────────────
+
+async function fireNotification(slot, isOvertime) {
+  const allowed = await ensureNotificationPermission();
+
+  // Always badge — works even if notifications are blocked
+  chrome.action.setBadgeText({ text: "LOG" });
+  chrome.action.setBadgeBackgroundColor({ color: isOvertime ? "#f38ba8" : "#89b4fa" });
+
+  if (!allowed) return; // badge is the fallback
+
+  chrome.notifications.create("prod-tick", {
+    type:              "basic",
+    iconUrl:           "icons/icon48.png",
+    title:             isOvertime ? "⚠ Overtime Window" : "Productivity Tracker",
+    message:           `Log your ${slot} window — click to open`,
+    priority:          2,
+    requireInteraction: true   // stays until dismissed — better than auto-dismiss
+  });
+}
+
+// ── Main alarm handler ────────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener(async alarm => {
+
+  // ── Missed-window check (fires 3 min after tick alarm) ──────────────────────
+  if (alarm.name === ALARM_MISSED) {
+    const pending = await new Promise(r =>
+      chrome.storage.local.get("pending_slot", d => r(d.pending_slot))
+    );
+
+    if (!pending) return; // already submitted — nothing to do
+
+    await chrome.storage.local.remove("pending_slot");
+
+    const missedType = pending.is_overtime ? "overtime" : "missed";
+    await appendLog({
+      date:       pending.date,
+      time_slot:  pending.time_slot,
+      day:        pending.day,
+      category:   "",
+      note:       "",
+      entry_type: missedType
+    });
+
+    chrome.action.setBadgeText({ text: "" });
+    chrome.notifications.clear("prod-tick");
+
+    // Break inference — work hours only
+    if (!pending.is_overtime) {
+      const settings = await getSettings();
+      const logs     = await getLogs();
+      const recent   = logs.slice(-settings.break_threshold_windows);
+      if (
+        recent.length === settings.break_threshold_windows &&
+        recent.every(r => r.entry_type === "missed")
+      ) {
+        await retroMarkBreak(settings.break_threshold_windows);
+      }
+    }
+    return;
+  }
+
+  // ── Main tick alarm ───────────────────────────────────────────────────────
   if (alarm.name !== ALARM_NAME) return;
 
-  const settings = await getSettings();
-  const now      = nowMinutes();
-  const slot     = currentSlot();
-  const date     = todayStr();
-  const day      = dayName();
-
+  const settings   = await getSettings();
+  const now        = nowMinutes();
+  const slot       = currentSlot();
+  const date       = todayStr();
+  const day        = dayName();
   const isWorkHours = inRange(now, settings.work_start, settings.work_end);
   const isLunch     = inRange(now, settings.lunch_start, settings.lunch_end);
-  const isOvertime  = !isWorkHours; // anything before work_start or after work_end
+  const isOvertime  = !isWorkHours;
 
-  // Lunch — silent log, no popup
+  // Lunch — silent log, no prompt
   if (isLunch) {
     await appendLog({ date, time_slot: slot, day, category: "", note: "", entry_type: "lunch" });
     return;
   }
 
-  // Store pending slot so popup can read it (work hours + overtime both get a popup)
-  await chrome.storage.local.set({ pending_slot: { date, time_slot: slot, day, is_overtime: isOvertime } });
-
-  // Fire notification — label differs for overtime
-  chrome.notifications.create("prod-tick", {
-    type:     "basic",
-    iconUrl:  "icons/icon48.png",
-    title:    isOvertime ? "Productivity Tracker — Overtime" : "Productivity Tracker",
-    message:  isOvertime ? `⚠ ${slot} — logging overtime window` : `Log your ${slot} window`,
-    priority: 2,
-    requireInteraction: false
+  // Store pending slot
+  await chrome.storage.local.set({
+    pending_slot: { date, time_slot: slot, day, is_overtime: isOvertime }
   });
 
-  // Auto-log as missed after 3 minutes if popup not submitted
-  setTimeout(async () => {
-    const pending = await new Promise(r =>
-      chrome.storage.local.get("pending_slot", d => r(d.pending_slot))
-    );
+  // Fire notification + badge
+  await fireNotification(slot, isOvertime);
 
-    // Still pending = user didn't submit
-    if (pending && pending.time_slot === slot) {
-      await chrome.storage.local.remove("pending_slot");
-      const missedType = pending.is_overtime ? "overtime" : "missed";
-      await appendLog({ date, time_slot: slot, day, category: "", note: "", entry_type: missedType });
-
-      // Break inference only applies within work hours (not overtime)
-      if (!pending.is_overtime) {
-        const settings2 = await getSettings();
-        const logs      = await getLogs();
-        const recent    = logs.slice(-settings2.break_threshold_windows);
-
-        if (
-          recent.length === settings2.break_threshold_windows &&
-          recent.every(r => r.entry_type === "missed")
-        ) {
-          await retroMarkBreak(settings2.break_threshold_windows);
-        }
-      }
-    }
-  }, 3 * 60 * 1000); // 3 min window to respond
+  // Schedule missed-window check via alarm (NOT setTimeout — survives SW death)
+  chrome.alarms.create(ALARM_MISSED, { delayInMinutes: 3 });
 });
 
-// ── Notification click → open popup ──────────────────────────────────────────
+// ── Notification click → open logger tab ──────────────────────────────────────
+// chrome.action.openPopup() is blocked without a user gesture from the SW context.
+// Opening a tab is the only reliable fallback.
 
 chrome.notifications.onClicked.addListener(id => {
   if (id === "prod-tick") {
-    chrome.action.openPopup().catch(() => {
-      // openPopup() only works if user gesture is in scope
-      // fallback: badge the icon so user knows to click
-      chrome.action.setBadgeText({ text: "!" });
-      chrome.action.setBadgeBackgroundColor({ color: "#89b4fa" });
-    });
+    chrome.notifications.clear("prod-tick");
+    chrome.tabs.create({ url: chrome.runtime.getURL("logger.html"), active: true });
   }
 });
 
-// ── On install / startup: register alarm ─────────────────────────────────────
+// ── On install / startup ──────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(registerAlarm);
 chrome.runtime.onStartup.addListener(registerAlarm);
 
-// ── Message from popup: submitted ─────────────────────────────────────────────
+// ── Messages from popup / logger ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "LOG_ENTRY") {
@@ -188,11 +229,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         chrome.storage.local.get("pending_slot", d => r(d.pending_slot))
       );
 
-      const slot = pending || {
-        date:      todayStr(),
-        time_slot: currentSlot(),
-        day:       dayName()
-      };
+      const slot = pending || { date: todayStr(), time_slot: currentSlot(), day: dayName() };
 
       await appendLog({
         ...slot,
@@ -202,10 +239,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       });
 
       await chrome.storage.local.remove("pending_slot");
+      await chrome.alarms.clear(ALARM_MISSED); // cancel missed-check — already logged
       chrome.action.setBadgeText({ text: "" });
+      chrome.notifications.clear("prod-tick");
       sendResponse({ ok: true });
     })();
-    return true; // async response
+    return true;
   }
 
   if (msg.type === "SETTINGS_SAVED") {

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Log Your Window — Productivity Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #1e1e2e;
+      --surface:  #313244;
+      --border:   #45475a;
+      --text:     #cdd6f4;
+      --subtext:  #a6adc8;
+      --accent:   #89b4fa;
+      --accent-fg:#1e1e2e;
+      --red:      #f38ba8;
+      --green:    #a6e3a1;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 36px 40px;
+      width: 420px;
+    }
+
+    .card-header {
+      margin-bottom: 24px;
+    }
+
+    .card-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .slot-label {
+      font-size: 12px;
+      color: var(--subtext);
+    }
+
+    .slot-label span {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .slot-label.overtime span {
+      color: var(--red);
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: var(--subtext);
+      margin-bottom: 6px;
+    }
+
+    select, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      margin-bottom: 18px;
+      transition: border-color 0.15s;
+    }
+
+    select:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    select option { background: var(--surface); }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    button {
+      padding: 9px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+
+    button:hover { opacity: 0.85; }
+
+    .btn-primary { background: var(--accent); color: var(--accent-fg); }
+    .btn-ghost   { background: var(--border); color: var(--text); }
+
+    .toast {
+      display: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 14px;
+      text-align: center;
+    }
+    .toast.success { background: #1e3a2f; color: var(--green); display: block; }
+    .toast.error   { background: #3a1e1e; color: var(--red);   display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <h1>What are you working on?</h1>
+      <p class="slot-label" id="slot-label">Window: <span id="slot-time">--:--</span></p>
+    </div>
+
+    <label for="category">Category</label>
+    <select id="category">
+      <option>Deep Work</option>
+      <option>Meeting / Call</option>
+      <option>Review / Feedback</option>
+      <option>Admin / Email</option>
+      <option>Learning</option>
+      <option>Other</option>
+    </select>
+
+    <label for="note">Note <span style="color:var(--border); font-size:10px;">(optional)</span></label>
+    <input type="text" id="note" placeholder="e.g. infra pipeline review" />
+
+    <div class="btn-row">
+      <button class="btn-ghost" id="btn-skip">Skip</button>
+      <button class="btn-primary" id="btn-submit">Log it →</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+    function showToast(msg, type = "success") {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className   = `toast ${type}`;
+      if (type === "success") {
+        setTimeout(() => window.close(), 1200);
+      }
+    }
+
+    // Load pending slot
+    chrome.storage.local.get("pending_slot", data => {
+      const pending = data.pending_slot;
+      const slotEl  = document.getElementById("slot-time");
+      const labelEl = document.getElementById("slot-label");
+
+      if (pending) {
+        slotEl.textContent = pending.time_slot;
+        if (pending.is_overtime) {
+          slotEl.textContent += " — Overtime";
+          slotEl.style.color  = "var(--red)";
+        }
+      } else {
+        const now = new Date();
+        slotEl.textContent = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+      }
+    });
+
+    document.getElementById("note").focus();
+
+    document.getElementById("btn-submit").addEventListener("click", () => {
+      const category = document.getElementById("category").value.trim();
+      const note     = document.getElementById("note").value.trim();
+
+      chrome.runtime.sendMessage({ type: "LOG_ENTRY", category, note }, res => {
+        if (res?.ok) {
+          showToast("Logged ✓");
+        } else {
+          showToast("Something went wrong.", "error");
+        }
+      });
+    });
+
+    document.getElementById("btn-skip").addEventListener("click", () => {
+      window.close();
+    });
+
+    document.getElementById("note").addEventListener("keydown", e => {
+      if (e.key === "Enter") document.getElementById("btn-submit").click();
+    });
+  </script>
+</body>
+</html>

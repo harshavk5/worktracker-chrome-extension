@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Productivity Tracker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Log what you're working on every 15/30 min. Export to CSV weekly.",
 
   "permissions": [
     "alarms",
     "storage",
     "notifications",
-    "downloads"
+    "downloads",
+    "tabs"
   ],
 
   "background": {
@@ -24,6 +25,13 @@
       "128": "icons/icon128.png"
     }
   },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["logger.html"],
+      "matches":   ["<all_urls>"]
+    }
+  ],
 
   "icons": {
     "16":  "icons/icon16.png",

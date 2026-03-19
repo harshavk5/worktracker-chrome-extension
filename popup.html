@@ -55,6 +55,27 @@
     .panel.active { display: block; }
 
     /* ── Log panel ── */
+    .clock-bar {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .clock-time {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 2px;
+      line-height: 1;
+      font-family: "Segoe UI Mono", "Consolas", monospace;
+    }
+    .clock-time.overtime { color: var(--red); }
+    .clock-meta {
+      font-size: 11px;
+      color: var(--subtext);
+      line-height: 1.6;
+    }
     .slot-label {
       font-size: 11px;
       color: var(--subtext);
@@ -210,7 +231,13 @@
 
   <!-- ── Log Panel ── -->
   <div id="tab-log" class="panel active">
-    <p class="slot-label">Window: <span id="slot-time">--:--</span></p>
+    <div class="clock-bar">
+      <span class="clock-time" id="live-clock">--:--:--</span>
+      <div class="clock-meta">
+        <span id="clock-date">---</span>
+        <span id="clock-status">--</span>
+      </div>
+    </div>
 
     <label for="category">Category</label>
     <select id="category">
